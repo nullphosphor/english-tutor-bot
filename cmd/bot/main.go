@@ -9,10 +9,10 @@ import (
 	"github.com/nullphosphor/english-tutor-bot/internal/adapter/postgres"
 	"github.com/nullphosphor/english-tutor-bot/internal/adapter/telegram"
 	"github.com/nullphosphor/english-tutor-bot/internal/config"
+	"github.com/nullphosphor/english-tutor-bot/internal/service"
 )
 
 func main() {
-	log.Println("start telegram bot")
 	ctx, cancel := signal.NotifyContext(
 		context.Background(),
 		syscall.SIGTERM, syscall.SIGINT,
@@ -32,18 +32,34 @@ func main() {
 	}
 	defer pool.Close()
 
+	log.Println("initializing lesson feature")
+	lessonRepository := postgres.NewLessonRepository(pool)
+	lessonService := service.NewLessonService(lessonRepository)
+	lessonManager := telegram.NewLessonCreationManager()
+
+	log.Println("initializing student feature")
+	studentRepository := postgres.NewStudentRepository(pool)
+	studentService := service.NewStudentService(studentRepository)
+
 	log.Println("initializing telegram bot")
 	bot, err := telegram.NewBot(cfg.Token)
 	if err != nil {
 		log.Printf("failed to init telegram bot: %v", err)
 		return
 	}
+	bot.RegisterHandlers(
+		ctx,
+		lessonService,
+		studentService,
+		lessonManager,
+		cfg,
+		cfg.AdminTelegramID,
+	)
 
 	go func() {
 		bot.Start()
 	}()
 
-	bot.RegisterHandlers()
 	<-ctx.Done()
 	bot.Stop()
 }

@@ -1,0 +1,632 @@
+
+
+========== FILE: ./cmd/bot/main.go ==========
+
+package main
+
+import (
+	"context"
+	"log"
+	"os/signal"
+	"syscall"
+
+	"github.com/nullphosphor/english-tutor-bot/internal/adapter/postgres"
+	"github.com/nullphosphor/english-tutor-bot/internal/adapter/telegram"
+	"github.com/nullphosphor/english-tutor-bot/internal/config"
+)
+
+func main() {
+	log.Println("start telegram bot")
+	ctx, cancel := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGTERM, syscall.SIGINT,
+	)
+	defer cancel()
+
+	cfg := config.LoadConfigMust()
+
+	log.Println("initializing pool")
+	pool, err := postgres.NewPool(
+		ctx,
+		cfg.DatabaseURL,
+	)
+	if err != nil {
+		log.Printf("failed to init postgres pool: %v", err)
+		return
+	}
+	defer pool.Close()
+
+	log.Println("initializing telegram bot")
+	bot, err := telegram.NewBot(cfg.Token)
+	if err != nil {
+		log.Printf("failed to init telegram bot: %v", err)
+		return
+	}
+	bot.RegisterHandlers()
+
+	go func() {
+		bot.Start()
+	}()
+
+	<-ctx.Done()
+	bot.Stop()
+}
+
+
+========== FILE: ./go.mod ==========
+
+module github.com/nullphosphor/english-tutor-bot
+
+go 1.27.3
+
+require (
+	github.com/jackc/pgx/v5 v5.12.0
+	github.com/joho/godotenv v1.5.1
+	golang.org/x/net v0.62.0
+	gopkg.in/telebot.v4 v4.0.0-beta.10
+)
+
+require (
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
+)
+
+
+========== FILE: ./internal/adapter/postgres/lesson_repository.go ==========
+
+package postgres
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/nullphosphor/english-tutor-bot/internal/domain"
+)
+
+type LessonRepository struct {
+	pool *Pool
+}
+
+func NewLessonRepository(pool *Pool) *LessonRepository {
+	return &LessonRepository{
+		pool: pool,
+	}
+}
+
+func (p *LessonRepository) CreateLesson(
+	ctx context.Context,
+	lesson domain.Lesson,
+) (domain.Lesson, error) {
+	query := `
+		INSERT INTO public.lessons (student_id, date_time,
+		meeting_app, meeting_url)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, student_id, date_time, meeting_app,
+		meeting_url, status, created_at;
+	`
+
+	row := p.pool.QueryRow(
+		ctx,
+		query,
+		lesson.StudentID,
+		lesson.DateTime,
+		lesson.MeetingApp,
+		lesson.MeetingURL,
+	)
+
+	var lessonDomain domain.Lesson
+	err := row.Scan(
+		&lessonDomain.ID,
+		&lessonDomain.StudentID,
+		&lessonDomain.DateTime,
+		&lessonDomain.MeetingApp,
+		&lessonDomain.MeetingURL,
+		&lessonDomain.LessonStatus,
+		&lessonDomain.CreatedAt,
+	)
+
+	if err != nil {
+		return domain.Lesson{}, fmt.Errorf("can't create lesson: %w", err)
+	}
+
+	return lessonDomain, nil
+}
+
+func (p *LessonRepository) GetLessonByID(
+	ctx context.Context,
+	id int64,
+) (domain.Lesson, error) {
+	query := `
+		SELECT id, student_id, date_time, meeting_app,
+		meeting_url, status, created_at FROM public.lessons
+		WHERE id=$1	
+	`
+
+	row := p.pool.QueryRow(
+		ctx,
+		query,
+		id,
+	)
+
+	var lessonDomain domain.Lesson
+	err := row.Scan(
+		&lessonDomain.ID,
+		&lessonDomain.StudentID,
+		&lessonDomain.DateTime,
+		&lessonDomain.MeetingApp,
+		&lessonDomain.MeetingURL,
+		&lessonDomain.LessonStatus,
+		&lessonDomain.CreatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Lesson{}, fmt.Errorf(
+				"lesson with id='%d': %w",
+				id, domain.ErrNotFound,
+			)
+		}
+		return domain.Lesson{}, fmt.Errorf("can't get lesson by id: %w", err)
+	}
+
+	return lessonDomain, nil
+}
+
+
+========== FILE: ./internal/adapter/postgres/pool.go ==========
+
+package postgres
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Pool struct {
+	*pgxpool.Pool
+}
+
+func NewPool(
+	ctx context.Context,
+	databaseURL string,
+) (*Pool, error) {
+	pool, err := pgxpool.New(ctx, databaseURL)
+
+	if err != nil {
+		return nil, fmt.Errorf("create pool: %w", err)
+	}
+
+	return &Pool{pool}, nil
+}
+
+
+========== FILE: ./internal/adapter/telegram/bot.go ==========
+
+package telegram
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+
+	"golang.org/x/net/proxy"
+	tele "gopkg.in/telebot.v4"
+)
+
+type Bot struct {
+	*tele.Bot
+}
+
+func NewBot(token string) (*Bot, error) {
+	dialer, err := proxy.SOCKS5(
+		"tcp",
+		"127.0.0.1:12334",
+		nil,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create socks5 dialer: %w", err)
+	}
+
+	contextDialer, ok := dialer.(proxy.ContextDialer)
+	if !ok {
+		return nil, fmt.Errorf("socks5 dialer does not support context")
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = contextDialer.DialContext
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   time.Minute,
+	}
+
+	b, err := tele.NewBot(tele.Settings{
+		Token:  token,
+		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+		Client: client,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create bot: %w", err)
+	}
+
+	return &Bot{Bot: b}, nil
+}
+
+
+========== FILE: ./internal/adapter/telegram/handlers.go ==========
+
+package telegram
+
+import tele "gopkg.in/telebot.v4"
+
+func (b *Bot) EchoHandler() {
+	b.Handle("/hello", func(c tele.Context) error {
+		return c.Send("hello")
+	})
+
+}
+
+
+========== FILE: ./internal/adapter/telegram/lesson_creation.go ==========
+
+package telegram
+
+import (
+	"sync"
+	"time"
+
+	tele "gopkg.in/telebot.v4"
+)
+
+type LessonCreationStep string
+
+const (
+	StepWaitingStudentID LessonCreationStep = "waiting_student_id"
+	StepWaitingDate      LessonCreationStep = "waiting_date"
+	StepWaitingPlatform  LessonCreationStep = "waiting_platform"
+	StepWaitingURL       LessonCreationStep = "waiting_url"
+	StepWaitingConfirm   LessonCreationStep = "waiting_confirm"
+)
+
+type LessonCreationState struct {
+	Step      LessonCreationStep
+	StudentID int64
+	Date      time.Time
+	Platform  string
+	URL       string
+}
+
+type LessonCreationManager struct {
+	states map[int64]LessonCreationState
+	bot    *tele.Bot
+	mu     sync.RWMutex
+}
+
+func NewLessonCreationManager() *LessonCreationManager {
+	return &LessonCreationManager{
+		states: make(map[int64]LessonCreationState),
+	}
+}
+
+func (l *LessonCreationManager) Start() error {
+
+}
+
+
+========== FILE: ./internal/adapter/telegram/register.go ==========
+
+package telegram
+
+func (b *Bot) RegisterHandlers() {
+	b.EchoHandler()
+}
+
+
+========== FILE: ./internal/config/config.go ==========
+
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/joho/godotenv"
+)
+
+type Config struct {
+	Token           string
+	AdminTelegramID int64
+	DatabaseURL     string
+}
+
+func LoadConfig() (Config, error) {
+	var config Config
+
+	if err := godotenv.Load(".env"); err != nil {
+		return Config{}, fmt.Errorf("cannot load config: %w", err)
+	}
+
+	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	if strings.TrimSpace(botToken) == "" {
+		return Config{}, errors.New("empty bot token")
+	}
+
+	id := os.Getenv("ADMIN_TELEGRAM_ID")
+	if strings.TrimSpace(id) == "" {
+		return Config{}, errors.New("empty adminTelegramID")
+
+	}
+
+	telegramAdminID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return Config{}, fmt.Errorf("parse id: %w", err)
+	}
+
+	databaseURL := os.Getenv("DATABASE_URL")
+	if strings.TrimSpace(databaseURL) == "" {
+		return Config{}, errors.New("empty databaseURL")
+	}
+
+	config.Token = botToken
+	config.AdminTelegramID = telegramAdminID
+	config.DatabaseURL = databaseURL
+
+	return config, nil
+}
+
+func LoadConfigMust() Config {
+	config, err := LoadConfig()
+
+	if err != nil {
+		panic(fmt.Errorf("load config must: %w", err))
+	}
+
+	return config
+}
+
+
+========== FILE: ./internal/domain/errors.go ==========
+
+package domain
+
+import "errors"
+
+var (
+	ErrNotFound              = errors.New("not found")
+	ErrInvalidStudentID      = errors.New("invalid studentID")
+	ErrInvalidLessonDateTime = errors.New("invalid dateTime")
+)
+
+
+========== FILE: ./internal/domain/lesson.go ==========
+
+package domain
+
+import (
+	"errors"
+	"strings"
+	"time"
+)
+
+type LessonStatus string
+
+const (
+	LessonStatusScheduled LessonStatus = "scheduled"
+	LessonStatusCompleted LessonStatus = "completed"
+	LessonStatusCancelled LessonStatus = "cancelled"
+)
+
+type Lesson struct {
+	ID           int64
+	StudentID    int64
+	DateTime     time.Time
+	MeetingApp   string
+	MeetingURL   string
+	LessonStatus LessonStatus
+	CreatedAt    time.Time
+}
+
+func NewLesson(
+	studentID int64,
+	dateTime time.Time,
+	meetingApp, meetingURL string,
+) Lesson {
+	return Lesson{
+		StudentID:    studentID,
+		DateTime:     dateTime,
+		MeetingApp:   meetingApp,
+		MeetingURL:   meetingURL,
+		LessonStatus: LessonStatusScheduled,
+		CreatedAt:    time.Now(),
+	}
+}
+
+func (l *Lesson) Validate() error {
+	if l.StudentID <= 0 {
+		return errors.New("invalid studentID")
+	}
+
+	if l.DateTime.IsZero() {
+		return errors.New("invalid dateTime")
+	}
+
+	if l.MeetingApp != "Zoom" && l.MeetingApp != "Google meet" {
+		return errors.New("invalid meetingApp")
+	}
+
+	if strings.TrimSpace(l.MeetingURL) == "" {
+		return errors.New("invalid meeting url")
+	}
+
+	if l.LessonStatus != LessonStatusScheduled && l.LessonStatus != LessonStatusCompleted && l.LessonStatus != LessonStatusCancelled {
+		return errors.New("invalid lessonStatus")
+	}
+
+	return nil
+}
+
+
+========== FILE: ./internal/service/lesson_service.go ==========
+
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/nullphosphor/english-tutor-bot/internal/domain"
+)
+
+type LessonService struct {
+	lessonRepository LessonRepository
+}
+
+func NewLessonService(lessonRepository LessonRepository) *LessonService {
+	return &LessonService{
+		lessonRepository: lessonRepository,
+	}
+}
+
+type LessonRepository interface {
+	CreateLesson(
+		ctx context.Context,
+		lesson domain.Lesson,
+	) (domain.Lesson, error)
+
+	GetLessonByID(
+		ctx context.Context,
+		id int64,
+	) (domain.Lesson, error)
+}
+
+func (s *LessonService) CreateLesson(
+	ctx context.Context,
+	lesson domain.Lesson,
+) (domain.Lesson, error) {
+	if err := lesson.Validate(); err != nil {
+		return domain.Lesson{}, fmt.Errorf("validate lesson from service: %w", err)
+	}
+
+	lesson, err := s.lessonRepository.CreateLesson(ctx, lesson)
+	if err != nil {
+		return domain.Lesson{}, fmt.Errorf("create lesson from service: %w", err)
+	}
+
+	return lesson, nil
+}
+
+func (s *LessonService) GetLessonByID(
+	ctx context.Context,
+	id int64,
+) (domain.Lesson, error) {
+	lesson, err := s.lessonRepository.GetLessonByID(ctx, id)
+	if err != nil {
+		return domain.Lesson{}, fmt.Errorf("get lesson by id from service: %w", err)
+	}
+
+	return lesson, nil
+}
+
+
+========== FILE: ./Makefile ==========
+
+# Migration settings
+MIGRATIONS_DIR := migrations
+STEPS ?= 1
+
+# Load environment variables from .env
+-include .env
+export DATABASE_URL
+
+.PHONY: migrate-create migrate-up migrate-down migrate-down-all migrate-version
+
+# Create a new sequential migration.
+# Usage: make migrate-create name=create_students
+migrate-create:
+	@if [ -z "$(name)" ]; then \
+		echo "Usage: make migrate-create name=migration_name"; \
+		exit 1; \
+	fi
+	@migrate create -ext sql -dir $(MIGRATIONS_DIR) -seq $(name)
+
+# Apply all available migrations.
+migrate-up:
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "Error: DATABASE_URL is not set"; \
+		exit 1; \
+	fi
+	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up
+
+# Roll back the last N migrations.
+# Usage: make migrate-down STEPS=2
+migrate-down:
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "Error: DATABASE_URL is not set"; \
+		exit 1; \
+	fi
+	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" down $(STEPS)
+
+# Roll back all applied migrations.
+migrate-down-all:
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "Error: DATABASE_URL is not set"; \
+		exit 1; \
+	fi
+	@printf "WARNING: This will roll back ALL applied migrations.\nAre you sure? [y/N]: "; \
+	read -r ans; \
+	case "$$ans" in \
+		y|Y) migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" down ;; \
+		*) echo "Migration rollback canceled" ;; \
+	esac
+
+# Show current migration version.
+migrate-version:
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "Error: DATABASE_URL is not set"; \
+		exit 1; \
+	fi
+	@migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" version
+
+
+========== FILE: ./migrations/000001_students.down.sql ==========
+
+DROP TABLE public.students;
+
+========== FILE: ./migrations/000001_students.up.sql ==========
+
+CREATE TABLE public.students (
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    telegram_id      BIGINT UNIQUE NOT NULL,
+    is_active        BOOLEAN NOT NULL                    DEFAULT TRUE
+);
+
+========== FILE: ./migrations/000002_lessons.down.sql ==========
+
+DROP TABLE public.lessons;
+
+========== FILE: ./migrations/000002_lessons.up.sql ==========
+
+CREATE TABLE public.lessons (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    student_id  BIGINT NOT NULL       REFERENCES public.students(id) ON DELETE RESTRICT,
+    date_time   TIMESTAMPTZ NOT NULL,
+    meeting_app TEXT NOT NULL,
+    meeting_url TEXT NOT NULL,
+    status      TEXT NOT NULL          DEFAULT 'scheduled',
+    created_at  TIMESTAMPTZ NOT NULL   DEFAULT CURRENT_TIMESTAMP
+);
+
+========== FILE: ./README.md ==========
+
+# english-tutor-bot
