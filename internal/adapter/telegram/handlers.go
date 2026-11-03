@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"strconv"
 	"strings"
@@ -33,7 +34,7 @@ func (b *Bot) CreateLessonHandler(
 func (b *Bot) LessonCreationMessageHandler(
 	ctx context.Context,
 	lessonCreationManager *LessonCreationManager,
-	studentServive *service.StudentService,
+	studentService *service.StudentService,
 	cfg config.Config,
 	adminTelegramID int64,
 ) {
@@ -60,7 +61,7 @@ func (b *Bot) LessonCreationMessageHandler(
 				return c.Send("Invalid Telegram ID. Please enter a valid numeric ID.")
 			}
 
-			student, err := studentServive.GetStudentByTelegramID(
+			student, err := studentService.GetStudentByTelegramID(
 				ctx,
 				telegramID,
 			)
@@ -166,34 +167,36 @@ func (b *Bot) LessonCreationMessageHandler(
 				}
 				return fmt.Errorf("update url: %w", err)
 			}
+
+			menu := &tele.ReplyMarkup{}
+
+			confirmBtn := menu.Data("Confirm", "lesson_confirm", "confirm_lesson")
+			cancelBtn := menu.Data("Cancel", "lesson_cancel", "cancel_lesson")
+
+			menu.Inline(
+				menu.Row(confirmBtn, cancelBtn),
+			)
+
+			stateFinish, err := lessonCreationManager.GetState(id)
+			if err != nil {
+				return fmt.Errorf("get state: %w", err)
+			}
+
+			message := fmt.Sprintf(
+				"Please confirm the lesson:\n\n"+
+					"Student database ID: %d\n"+
+					"Date: %s\n"+
+					"Platform: %s\n"+
+					"Meeting URL: %s",
+				stateFinish.StudentID,
+				stateFinish.Date.Format("02-01-2006 15:04"),
+				stateFinish.Platform,
+				stateFinish.URL,
+			)
+
+			return c.Send(message, menu)
 		}
-		stateFinish, err := lessonCreationManager.GetState(id)
-		if err != nil {
-			return fmt.Errorf("get state: %w", err)
-		}
-
-		message := fmt.Sprintf(
-			"Please confirm the lesson:\n\n"+
-				"Student ID: %d\n"+
-				"Date: %s\n"+
-				"Platform: %s\n"+
-				"Meeting URL: %s",
-			stateFinish.StudentID,
-			stateFinish.Date.Format("02-01-2006 15:04"),
-			stateFinish.Platform,
-			stateFinish.URL,
-		)
-
-		menu := &tele.ReplyMarkup{}
-
-		confirmBtn := menu.Data("Confirm", "confirm_lesson")
-		cancelBtn := menu.Data("Cancel", "cancel_lesson")
-
-		menu.Inline(
-			menu.Row(confirmBtn, cancelBtn),
-		)
-
-		return c.Send(message, menu)
+		return nil
 	})
 }
 
@@ -201,30 +204,37 @@ func (b *Bot) ConfirmCreationHandler(
 	ctx context.Context,
 	lessonCreationManager *LessonCreationManager,
 	lessonService *service.LessonService,
+	cfg config.Config,
 	adminTelegramID int64,
 ) {
 	b.Handle(tele.OnCallback, func(c tele.Context) error {
+		if err := c.Respond(); err != nil {
+			return fmt.Errorf("respond to callback: %w", err)
+		}
+
+		log.Println(c.Callback().Unique)
+		log.Println(c.Callback().Data)
 		id := c.Callback().Sender.ID
 
 		if id != adminTelegramID {
 			return c.Send("You aren't authorized to use this command.")
 		}
 
-		state, err := lessonCreationManager.GetState(id)
-		if err != nil {
-			if errors.Is(err, ErrDialogNotFound) {
-				return c.Send("Please start by running /create_lesson.")
-			}
-			return fmt.Errorf("get state: %w", err)
-		}
-
-		if state.Step != StepWaitingConfirm {
-			return ErrInvalidScriptStep
-		}
-		button := c.Callback().Data
-
+		button := c.Args()[1]
+		log.Println(c.Args()[1])
 		switch button {
 		case "confirm_lesson":
+			state, err := lessonCreationManager.BeginCreation(adminTelegramID)
+			if err != nil {
+				if errors.Is(err, ErrDialogNotFound) {
+					return c.Send("Please start by running /create_lesson.")
+				}
+				if errors.Is(err, ErrInvalidScriptStep) {
+					return c.Send("This lesson is no longer awaiting confirmation.")
+				}
+				return fmt.Errorf("begin lesson creation: %w", err)
+			}
+
 			lessonDomain := domain.NewLesson(
 				state.StudentID,
 				state.Date,
@@ -232,24 +242,50 @@ func (b *Bot) ConfirmCreationHandler(
 				state.URL,
 			)
 
-			lesson, err := lessonService.CreateLesson(
-				ctx,
-				lessonDomain,
-			)
-
+			lesson, err := lessonService.CreateLesson(ctx, lessonDomain)
 			if err != nil {
-				return fmt.Errorf("create lesson model: %w", err)
+				errReturnToConfirm := lessonCreationManager.ReturnToConfirmation(adminTelegramID)
+
+				return fmt.Errorf(
+					"create lesson: %w",
+					errors.Join(err, errReturnToConfirm),
+				)
 			}
 
 			lessonCreationManager.Finish(adminTelegramID)
 
-			c.Send("The lesson successfully create!")
+			lesson.DateTime = lesson.DateTime.In(cfg.TimeZone)
+
+			message := fmt.Sprintf(
+				"The lesson was successfully created!\n\n"+
+					"Student database ID: %d\n"+
+					"Date: %s\n"+
+					"Platform: %s\n"+
+					"Meeting URL: %s",
+				lesson.StudentID,
+				lesson.DateTime.Format("02-01-2006 15:04"),
+				lesson.MeetingApp,
+				lesson.MeetingURL,
+			)
+
+			return c.Send(message)
 
 		case "cancel_lesson":
-			lessonCreationManager.Finish(adminTelegramID)
+			if err := lessonCreationManager.CancelDialog(adminTelegramID); err != nil {
+				if errors.Is(err, ErrDialogNotFound) {
+					return c.Send("Please start by running /create_lesson.")
+				}
 
-			c.Send("The lesson succesfully canceled")
+				if errors.Is(err, ErrInvalidScriptStep) {
+					return c.Send("invalid step")
+				}
+				log.Printf("cancel dialog: %v", err)
+				return c.Send("invalid error")
+			}
+
+			return c.Send("The lesson creation was cancelled.")
+		default:
+			return nil
 		}
-
 	})
 }

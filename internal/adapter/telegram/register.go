@@ -27,4 +27,12 @@ func (b *Bot) RegisterHandlers(
 		cfg,
 		adminTelegramID,
 	)
+
+	b.ConfirmCreationHandler(
+		ctx,
+		lessonManager,
+		lessonService,
+		cfg,
+		adminTelegramID,
+	)
 }

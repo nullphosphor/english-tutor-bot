@@ -13,6 +13,7 @@ const (
 	StepWaitingPlatform  LessonCreationStep = "waiting_platform"
 	StepWaitingURL       LessonCreationStep = "waiting_url"
 	StepWaitingConfirm   LessonCreationStep = "waiting_confirm"
+	StepCreating         LessonCreationStep = "creating"
 )
 
 type LessonCreationState struct {
@@ -150,4 +151,65 @@ func (l *LessonCreationManager) Finish(
 	defer l.mu.Unlock()
 
 	delete(l.states, adminTelegramID)
+}
+
+func (l *LessonCreationManager) BeginCreation(
+	adminTelegramID int64,
+) (LessonCreationState, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	state, ok := l.states[adminTelegramID]
+	if !ok {
+		return LessonCreationState{}, ErrDialogNotFound
+	}
+
+	if state.Step != StepWaitingConfirm {
+		return LessonCreationState{}, ErrInvalidScriptStep
+	}
+
+	state.Step = StepCreating
+	l.states[adminTelegramID] = state
+
+	return state, nil
+}
+
+func (l *LessonCreationManager) ReturnToConfirmation(
+	adminTelegramID int64,
+) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	state, ok := l.states[adminTelegramID]
+	if !ok {
+		return ErrDialogNotFound
+	}
+
+	if state.Step != StepCreating {
+		return ErrInvalidScriptStep
+	}
+
+	state.Step = StepWaitingConfirm
+	l.states[adminTelegramID] = state
+
+	return nil
+}
+
+func (l *LessonCreationManager) CancelDialog(
+	adminTelegramID int64,
+) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	state, ok := l.states[adminTelegramID]
+	if !ok {
+		return ErrDialogNotFound
+	}
+
+	if state.Step != StepWaitingConfirm {
+		return ErrInvalidScriptStep
+	}
+
+	delete(l.states, adminTelegramID)
+	return nil
 }
