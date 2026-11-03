@@ -212,8 +212,6 @@ func (b *Bot) ConfirmCreationHandler(
 			return fmt.Errorf("respond to callback: %w", err)
 		}
 
-		log.Println(c.Callback().Unique)
-		log.Println(c.Callback().Data)
 		id := c.Callback().Sender.ID
 
 		if id != adminTelegramID {
@@ -221,7 +219,6 @@ func (b *Bot) ConfirmCreationHandler(
 		}
 
 		button := c.Args()[1]
-		log.Println(c.Args()[1])
 		switch button {
 		case "confirm_lesson":
 			state, err := lessonCreationManager.BeginCreation(adminTelegramID)
