@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -14,6 +15,7 @@ type Config struct {
 	Token           string
 	AdminTelegramID int64
 	DatabaseURL     string
+	TimeZone        *time.Location
 }
 
 func LoadConfig() (Config, error) {
@@ -44,6 +46,17 @@ func LoadConfig() (Config, error) {
 		return Config{}, errors.New("empty databaseURL")
 	}
 
+	tz := os.Getenv("TIME_ZONE")
+	if tz == "" {
+		tz = "UTC"
+	}
+
+	zone, err := time.LoadLocation(tz)
+	if err != nil {
+		return Config{}, fmt.Errorf("load location: %w", err)
+	}
+
+	config.TimeZone = zone
 	config.Token = botToken
 	config.AdminTelegramID = telegramAdminID
 	config.DatabaseURL = databaseURL
