@@ -73,6 +73,10 @@ func (l *LessonCreationManager) UpdateState(
 		return ErrDialogNotFound
 	}
 
+	if state.Step != StepWaitingStudentID {
+		return ErrInvalidScriptStep
+	}
+
 	state.StudentID = studentID
 	state.Step = nextStep
 
@@ -92,6 +96,10 @@ func (l *LessonCreationManager) UpdateDate(
 	state, ok := l.states[adminTelegramID]
 	if !ok {
 		return ErrDialogNotFound
+	}
+
+	if state.Step != StepWaitingDate {
+		return ErrInvalidScriptStep
 	}
 
 	state.Date = date
@@ -115,6 +123,10 @@ func (l *LessonCreationManager) UpdatePlatform(
 		return ErrDialogNotFound
 	}
 
+	if state.Step != StepWaitingPlatform {
+		return ErrInvalidScriptStep
+	}
+
 	state.Platform = platform
 	state.Step = nextStep
 
@@ -134,6 +146,10 @@ func (l *LessonCreationManager) UpdateURL(
 	state, ok := l.states[adminTelegramID]
 	if !ok {
 		return ErrDialogNotFound
+	}
+
+	if state.Step != StepWaitingURL {
+		return ErrInvalidScriptStep
 	}
 
 	state.URL = url

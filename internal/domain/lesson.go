@@ -35,7 +35,6 @@ func NewLesson(
 		MeetingApp:   meetingApp,
 		MeetingURL:   meetingURL,
 		LessonStatus: LessonStatusScheduled,
-		CreatedAt:    time.Now(),
 	}
 }
 

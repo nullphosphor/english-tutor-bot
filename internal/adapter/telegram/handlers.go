@@ -218,8 +218,15 @@ func (b *Bot) ConfirmCreationHandler(
 			return c.Send("You aren't authorized to use this command.")
 		}
 
-		button := c.Args()[1]
+		sliceButtons := c.Args()
+		button := ""
+		if len(sliceButtons) > 1 {
+			button = sliceButtons[1]
+		}
+
 		switch button {
+		case "":
+			return c.Send("invalid button")
 		case "confirm_lesson":
 			state, err := lessonCreationManager.BeginCreation(adminTelegramID)
 			if err != nil {
