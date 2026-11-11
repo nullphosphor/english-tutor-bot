@@ -38,9 +38,10 @@ func NewBot(token string) (*Bot, error) {
 	}
 
 	b, err := tele.NewBot(tele.Settings{
-		Token:  token,
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
-		Client: client,
+		Token:       token,
+		Poller:      &tele.LongPoller{Timeout: 10 * time.Second},
+		Client:      client,
+		Synchronous: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create bot: %w", err)

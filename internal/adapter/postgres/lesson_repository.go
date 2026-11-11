@@ -30,7 +30,7 @@ func (r *LessonRepository) CreateLesson(
 		meeting_app, meeting_url)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, student_id, date_time, started_at, finished_at,
-		meeting_app, meeting_url, status, created_at;
+		meeting_app, meeting_url, status, created_at, version;
 	`
 
 	row := r.pool.QueryRow(
@@ -53,6 +53,7 @@ func (r *LessonRepository) CreateLesson(
 		&lessonDomain.MeetingURL,
 		&lessonDomain.LessonStatus,
 		&lessonDomain.CreatedAt,
+		&lesson.Version,
 	)
 
 	pgError := &pgconn.PgError{}
@@ -75,7 +76,7 @@ func (r *LessonRepository) GetLessonByID(
 ) (domain.Lesson, error) {
 	query := `
 		SELECT id, student_id, date_time, started_at, finished_at, 
-		meeting_app, meeting_url, status, created_at 
+		meeting_app, meeting_url, status, created_at, version 
 		FROM public.lessons
 		WHERE id=$1	
 	`
@@ -97,6 +98,7 @@ func (r *LessonRepository) GetLessonByID(
 		&lessonDomain.MeetingURL,
 		&lessonDomain.LessonStatus,
 		&lessonDomain.CreatedAt,
+		&lessonDomain.Version,
 	)
 
 	if err != nil {
@@ -118,9 +120,10 @@ func (r *LessonRepository) GetLessonsByPeriod(
 ) ([]domain.Lesson, error) {
 	query := `
 		SELECT id, student_id, date_time, started_at, finished_at,
-		meeting_app, meeting_url, status, created_at
+		meeting_app, meeting_url, status, created_at, version
 		FROM public.lessons
-		WHERE date_time >= $1 AND date_time < $2;
+		WHERE date_time >= $1 AND date_time < $2
+		ORDER BY date_time ASC, id ASC;
 	`
 
 	rows, err := r.pool.Query(
@@ -147,6 +150,7 @@ func (r *LessonRepository) GetLessonsByPeriod(
 			&lessonDomain.MeetingURL,
 			&lessonDomain.LessonStatus,
 			&lessonDomain.CreatedAt,
+			&lessonDomain.Version,
 		)
 		if err != nil {
 			return []domain.Lesson{}, fmt.Errorf("scan lessons: %w", err)
@@ -168,10 +172,10 @@ func (r *LessonRepository) UpdateLesson(
 ) (domain.Lesson, error) {
 	query := `
 		UPDATE public.lessons
-		SET	started_at=$1, finished_at=$2, status=$3
-		WHERE id=$4
+		SET	started_at=$1, finished_at=$2, status=$3, version=version+1
+		WHERE id=$4 AND version=$5
 		RETURNING id, student_id, date_time, started_at, finished_at,
-		meeting_app, meeting_url, status, created_at;
+		meeting_app, meeting_url, status, created_at, version;
 	`
 
 	row := r.pool.QueryRow(
@@ -181,6 +185,7 @@ func (r *LessonRepository) UpdateLesson(
 		lesson.FinishedAt,
 		lesson.LessonStatus,
 		lesson.ID,
+		lesson.Version,
 	)
 
 	var lessonDomain domain.Lesson
@@ -194,13 +199,14 @@ func (r *LessonRepository) UpdateLesson(
 		&lessonDomain.MeetingURL,
 		&lessonDomain.LessonStatus,
 		&lessonDomain.CreatedAt,
+		&lessonDomain.Version,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Lesson{}, fmt.Errorf(
-				"lesson with id=%d: %w",
+				"lesson with id=%d concurrently accessed:: %w",
 				lesson.ID,
-				domain.ErrNotFound,
+				domain.ErrConflict,
 			)
 		}
 		return domain.Lesson{}, fmt.Errorf("can't update lesson: %w", err)

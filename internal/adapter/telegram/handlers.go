@@ -145,21 +145,40 @@ func (b *Bot) LessonCreationMessageHandler(
 		case StepWaitingURL:
 			text := c.Text()
 
-			if strings.TrimSpace(text) == "" {
+			text = strings.TrimSpace(text)
+			if text == "" {
 				return c.Send("Please enter a valid url")
 			}
 
-			urlParse, err := url.ParseRequestURI(text)
+			parsed, err := url.ParseRequestURI(text)
 			if err != nil {
 				return c.Send("Please enter a valid url")
 			}
 
-			if !strings.EqualFold(urlParse.Scheme, "https") {
+			if parsed.User != nil {
+				return c.Send("Invalid URL")
+			}
+
+			if !strings.EqualFold(parsed.Scheme, "https") {
 				return c.Send("Invalid scheme")
 			}
 
-			if urlParse.Host == "" {
-				return c.Send("Invalid host")
+			if parsed.Hostname() == "" {
+				return c.Send("Invalid hostname")
+			}
+
+			host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+			switch state.Platform {
+			case "Zoom":
+				if host != "zoom.us" && !strings.HasSuffix(host, ".zoom.us") {
+					return c.Send("Invalid hostname")
+				}
+			case "Google Meet":
+				if host != "meet.google.com" {
+					return c.Send("Invalid hostname")
+				}
+			default:
+				return c.Send("Invalid platform")
 			}
 
 			if err := lessonCreationManager.UpdateURL(
@@ -182,21 +201,16 @@ func (b *Bot) LessonCreationMessageHandler(
 				menu.Row(confirmBtn, cancelBtn),
 			)
 
-			stateFinish, err := lessonCreationManager.GetState(id)
-			if err != nil {
-				return fmt.Errorf("get state: %w", err)
-			}
-
 			message := fmt.Sprintf(
 				"Please confirm the lesson:\n\n"+
 					"Student database ID: %d\n"+
 					"Date: %s\n"+
 					"Platform: %s\n"+
 					"Meeting URL: %s",
-				stateFinish.StudentID,
-				stateFinish.Date.Format("02-01-2006 15:04"),
-				stateFinish.Platform,
-				stateFinish.URL,
+				state.StudentID,
+				state.Date.Format("02-01-2006 15:04"),
+				state.Platform,
+				text,
 			)
 			return c.Send(message, menu)
 		}
@@ -306,6 +320,7 @@ func (b *Bot) CallbackHandler(
 
 			return c.Edit("The lesson creation was cancelled.", menu)
 		case "start_confirm":
+			menu := &tele.ReplyMarkup{}
 			idLesson, err := strconv.ParseInt(callbackPayload, 10, 64)
 			if err != nil {
 				return c.Send("Invalid lesson ID. Please enter a valid numeric ID.")
@@ -317,11 +332,15 @@ func (b *Bot) CallbackHandler(
 
 			if _, err := lessonService.StartLesson(ctx, idLesson); err != nil {
 				if errors.Is(err, domain.ErrNotFound) {
-					return c.Send("Lesson not found")
+					return c.Edit("Lesson not found", menu)
 				}
 
 				if errors.Is(err, domain.ErrInvalidArgument) {
-					return c.Send("Cannot start lesson in its current status")
+					return c.Edit("Cannot start lesson in its current status", menu)
+				}
+
+				if errors.Is(err, domain.ErrConflict) {
+					return c.Edit("This lesson has changed or is no longer available. Please run /today to refresh.", menu)
 				}
 
 				return fmt.Errorf("lesson start: %w", err)
@@ -345,6 +364,7 @@ func (b *Bot) CallbackHandler(
 
 			return c.Edit(msg, menu)
 		case "finish_confirm":
+			menu := &tele.ReplyMarkup{}
 			idLesson, err := strconv.ParseInt(callbackPayload, 10, 64)
 			if err != nil {
 				return c.Send("Invalid lesson ID. Please enter a valid numeric ID.")
@@ -356,11 +376,15 @@ func (b *Bot) CallbackHandler(
 
 			if _, err := lessonService.FinishLesson(ctx, idLesson); err != nil {
 				if errors.Is(err, domain.ErrNotFound) {
-					return c.Send("Lesson not found")
+					return c.Edit("Lesson not found", menu)
 				}
 
 				if errors.Is(err, domain.ErrInvalidArgument) {
-					return c.Send("Cannot finish lesson in its current status")
+					return c.Edit("Cannot finish lesson in its current status", menu)
+				}
+
+				if errors.Is(err, domain.ErrConflict) {
+					return c.Edit("This lesson has changed or is no longer available. Please run /today to refresh.", menu)
 				}
 
 				return fmt.Errorf("lesson finish: %w", err)
@@ -414,6 +438,10 @@ func (b *Bot) CallbackHandler(
 					return c.Edit("Cannot cancel lesson in its current status", menu)
 				}
 
+				if errors.Is(err, domain.ErrConflict) {
+					return c.Edit("This lesson has changed or is no longer available. Please run /today to refresh.", menu)
+				}
+
 				return fmt.Errorf("lesson cancel: %w", err)
 			}
 
@@ -453,6 +481,10 @@ func (b *Bot) CallbackHandler(
 			)
 			if err != nil {
 				return fmt.Errorf("get lessons: %w", err)
+			}
+
+			if len(lessons) == 0 {
+				return c.Edit("Enjoy your day off! :) You don't have any lessons today", menu)
 			}
 
 			msg, menu := buildLessonsMessage(lessons, cfg)
