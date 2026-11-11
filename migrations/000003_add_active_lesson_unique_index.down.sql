@@ -1,0 +1,1 @@
+DROP INDEX lessons_active_student_datetime_uidx; 

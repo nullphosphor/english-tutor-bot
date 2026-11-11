@@ -28,9 +28,16 @@ func (b *Bot) RegisterHandlers(
 		adminTelegramID,
 	)
 
-	b.ConfirmCreationHandler(
+	b.CallbackHandler(
 		ctx,
 		lessonManager,
+		lessonService,
+		cfg,
+		adminTelegramID,
+	)
+
+	b.TodayLessonsHandler(
+		ctx,
 		lessonService,
 		cfg,
 		adminTelegramID,
