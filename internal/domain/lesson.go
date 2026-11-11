@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"errors"
 	"strings"
 	"time"
 )
@@ -25,6 +24,8 @@ type Lesson struct {
 	MeetingURL   string
 	LessonStatus LessonStatus
 	CreatedAt    time.Time
+
+	Version int64
 }
 
 func NewLesson(
@@ -43,26 +44,26 @@ func NewLesson(
 
 func (l *Lesson) Validate() error {
 	if l.StudentID <= 0 {
-		return errors.New("invalid studentID")
+		return ErrInvalidArgument
 	}
 
 	if l.DateTime.IsZero() {
-		return errors.New("invalid dateTime")
+		return ErrInvalidArgument
 	}
 
 	if l.MeetingApp != "Zoom" && l.MeetingApp != "Google Meet" {
-		return errors.New("invalid meetingApp")
+		return ErrInvalidArgument
 	}
 
 	if strings.TrimSpace(l.MeetingURL) == "" {
-		return errors.New("invalid meeting url")
+		return ErrInvalidArgument
 	}
 
 	if l.LessonStatus != LessonStatusScheduled &&
 		l.LessonStatus != LessonStatusInProgress &&
 		l.LessonStatus != LessonStatusCompleted &&
 		l.LessonStatus != LessonStatusCancelled {
-		return errors.New("invalid lessonStatus")
+		return ErrInvalidArgument
 	}
 
 	return nil
@@ -70,7 +71,7 @@ func (l *Lesson) Validate() error {
 
 func (l *Lesson) StartLesson() error {
 	if l.LessonStatus != LessonStatusScheduled {
-		return errors.New("statusLesson must be 'scheduled'")
+		return ErrInvalidArgument
 	}
 
 	now := time.Now()
@@ -82,7 +83,7 @@ func (l *Lesson) StartLesson() error {
 
 func (l *Lesson) FinishLesson() error {
 	if l.LessonStatus != LessonStatusInProgress {
-		return errors.New("statusLesson must be 'in_progress'")
+		return ErrInvalidArgument
 	}
 
 	now := time.Now()
@@ -101,7 +102,7 @@ func (l *Lesson) CancelLesson() error {
 		l.FinishedAt = &now
 		l.LessonStatus = LessonStatusCancelled
 	case LessonStatusCancelled:
-		return errors.New("lesson already cancelled")
+		return ErrInvalidArgument
 	default:
 		return ErrInvalidArgument
 	}
