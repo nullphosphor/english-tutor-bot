@@ -36,7 +36,7 @@ func (s *StudentService) GetStudentByTelegramID(
 	)
 
 	if err != nil {
-		return domain.Student{}, fmt.Errorf("get studentByTelegramID from service: %w", err)
+		return domain.Student{}, fmt.Errorf("get studentByTelegramID: %w", err)
 	}
 
 	return student, nil
