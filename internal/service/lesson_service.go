@@ -36,6 +36,23 @@ type LessonRepository interface {
 		from, to time.Time,
 	) ([]domain.Lesson, error)
 
+	GetStudentLessonsByPeriod(
+		ctx context.Context,
+		studentID int64,
+		from, to time.Time,
+	) ([]domain.Lesson, error)
+
+	CountStudentLessons(
+		ctx context.Context,
+		studentID int64,
+	) (int64, error)
+
+	GetUpcomingStudentLessons(
+		ctx context.Context,
+		studentID int64,
+		now time.Time,
+	) ([]domain.Lesson, error)
+
 	UpdateLesson(
 		ctx context.Context,
 		lesson domain.Lesson,
@@ -105,6 +122,72 @@ func (s *LessonService) GetLessonsByPeriod(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get lessons: %w", err)
+	}
+
+	return lessons, nil
+}
+
+func (s *LessonService) GetStudentLessonsByPeriod(
+	ctx context.Context,
+	studentID int64,
+	from, to time.Time,
+) ([]domain.Lesson, error) {
+	if studentID <= 0 {
+		return nil, domain.ErrInvalidArgument
+	}
+
+	if from.After(to) {
+		return []domain.Lesson{}, fmt.Errorf("the beginning of the period must not be later than its end: %w", domain.ErrInvalidArgument)
+	}
+
+	lessons, err := s.lessonRepository.GetStudentLessonsByPeriod(
+		ctx,
+		studentID,
+		from,
+		to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get student lessons: %w", err)
+	}
+
+	return lessons, nil
+}
+
+func (s *LessonService) CountStudentLessons(
+	ctx context.Context,
+	studentID int64,
+) (int64, error) {
+	if studentID <= 0 {
+		return 0, domain.ErrInvalidArgument
+	}
+
+	count, err := s.lessonRepository.CountStudentLessons(
+		ctx,
+		studentID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("count student lessons from service: %w", err)
+	}
+
+	return count, nil
+}
+
+func (s *LessonService) GetUpcomingStudentLessons(
+	ctx context.Context,
+	studentID int64,
+	now time.Time,
+) ([]domain.Lesson, error) {
+	if studentID <= 0 {
+		return nil, domain.ErrInvalidArgument
+	}
+
+	lessons, err := s.lessonRepository.GetUpcomingStudentLessons(
+		ctx,
+		studentID,
+		now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get upcoming student lessons: %w", err)
 	}
 
 	return lessons, nil

@@ -8,12 +8,12 @@ import (
 type LessonCreationStep string
 
 const (
-	StepWaitingStudentID LessonCreationStep = "waiting_student_id"
-	StepWaitingDate      LessonCreationStep = "waiting_date"
-	StepWaitingPlatform  LessonCreationStep = "waiting_platform"
-	StepWaitingURL       LessonCreationStep = "waiting_url"
-	StepWaitingConfirm   LessonCreationStep = "waiting_confirm"
-	StepCreating         LessonCreationStep = "creating"
+	LessonStepWaitingStudentID LessonCreationStep = "waiting_student_id"
+	LessonStepWaitingDate      LessonCreationStep = "waiting_date"
+	LessonStepWaitingPlatform  LessonCreationStep = "waiting_platform"
+	LessonStepWaitingURL       LessonCreationStep = "waiting_url"
+	LessonStepWaitingConfirm   LessonCreationStep = "waiting_confirm"
+	LessonStepCreating         LessonCreationStep = "creating"
 )
 
 type LessonCreationState struct {
@@ -26,7 +26,7 @@ type LessonCreationState struct {
 
 type LessonCreationManager struct {
 	states map[int64]LessonCreationState
-	mu     sync.RWMutex
+	mu     sync.Mutex
 }
 
 func NewLessonCreationManager() *LessonCreationManager {
@@ -42,15 +42,15 @@ func (l *LessonCreationManager) Start(
 	defer l.mu.Unlock()
 
 	l.states[adminTelegramID] = LessonCreationState{
-		Step: StepWaitingStudentID,
+		Step: LessonStepWaitingStudentID,
 	}
 }
 
 func (l *LessonCreationManager) GetState(
 	adminTelegramID int64,
 ) (LessonCreationState, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	val, ok := l.states[adminTelegramID]
 	if !ok {
@@ -73,8 +73,8 @@ func (l *LessonCreationManager) UpdateState(
 		return ErrDialogNotFound
 	}
 
-	if state.Step != StepWaitingStudentID {
-		return ErrInvalidScriptStep
+	if state.Step != LessonStepWaitingStudentID {
+		return ErrInvalidDialogStep
 	}
 
 	state.StudentID = studentID
@@ -98,8 +98,8 @@ func (l *LessonCreationManager) UpdateDate(
 		return ErrDialogNotFound
 	}
 
-	if state.Step != StepWaitingDate {
-		return ErrInvalidScriptStep
+	if state.Step != LessonStepWaitingDate {
+		return ErrInvalidDialogStep
 	}
 
 	state.Date = date
@@ -123,8 +123,8 @@ func (l *LessonCreationManager) UpdatePlatform(
 		return ErrDialogNotFound
 	}
 
-	if state.Step != StepWaitingPlatform {
-		return ErrInvalidScriptStep
+	if state.Step != LessonStepWaitingPlatform {
+		return ErrInvalidDialogStep
 	}
 
 	state.Platform = platform
@@ -148,8 +148,8 @@ func (l *LessonCreationManager) UpdateURL(
 		return ErrDialogNotFound
 	}
 
-	if state.Step != StepWaitingURL {
-		return ErrInvalidScriptStep
+	if state.Step != LessonStepWaitingURL {
+		return ErrInvalidDialogStep
 	}
 
 	state.URL = url
@@ -160,7 +160,7 @@ func (l *LessonCreationManager) UpdateURL(
 	return nil
 }
 
-func (l *LessonCreationManager) Finish(
+func (l *LessonCreationManager) LessonFinish(
 	adminTelegramID int64,
 ) {
 	l.mu.Lock()
@@ -180,11 +180,11 @@ func (l *LessonCreationManager) BeginCreation(
 		return LessonCreationState{}, ErrDialogNotFound
 	}
 
-	if state.Step != StepWaitingConfirm {
-		return LessonCreationState{}, ErrInvalidScriptStep
+	if state.Step != LessonStepWaitingConfirm {
+		return LessonCreationState{}, ErrInvalidDialogStep
 	}
 
-	state.Step = StepCreating
+	state.Step = LessonStepCreating
 	l.states[adminTelegramID] = state
 
 	return state, nil
@@ -201,11 +201,11 @@ func (l *LessonCreationManager) ReturnToConfirmation(
 		return ErrDialogNotFound
 	}
 
-	if state.Step != StepCreating {
-		return ErrInvalidScriptStep
+	if state.Step != LessonStepCreating {
+		return ErrInvalidDialogStep
 	}
 
-	state.Step = StepWaitingConfirm
+	state.Step = LessonStepWaitingConfirm
 	l.states[adminTelegramID] = state
 
 	return nil
@@ -222,8 +222,8 @@ func (l *LessonCreationManager) CancelDialog(
 		return ErrDialogNotFound
 	}
 
-	if state.Step != StepWaitingConfirm {
-		return ErrInvalidScriptStep
+	if state.Step != LessonStepWaitingConfirm {
+		return ErrInvalidDialogStep
 	}
 
 	delete(l.states, adminTelegramID)

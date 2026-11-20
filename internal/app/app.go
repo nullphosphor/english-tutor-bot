@@ -37,14 +37,23 @@ func Run() error {
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	log.Println("initializing lesson feature")
+	log.Println("initializing feature lesson")
 	lessonRepository := postgres.NewLessonRepository(pool)
 	lessonService := service.NewLessonService(lessonRepository)
 	lessonManager := telegram.NewLessonCreationManager()
 
-	log.Println("initializing student feature")
+	log.Println("initializing feature student")
 	studentRepository := postgres.NewStudentRepository(pool)
 	studentService := service.NewStudentService(studentRepository)
+
+	log.Println("initializing feature invites")
+	invitesRepository := postgres.NewStudentInviteRepository(pool)
+	inviteStudentService := service.NewStudentInviteService(invitesRepository)
+
+	log.Println("initializing feature homework")
+	homeworkRepository := postgres.NewHomeworkRepository(pool)
+	homeworkService := service.NewHomeworkService(homeworkRepository)
+	homeworkManager := telegram.NewHomeworkCreationManager()
 
 	log.Println("initializing telegram bot")
 	bot, err := telegram.NewBot(cfg.Token)
@@ -54,8 +63,11 @@ func Run() error {
 	bot.RegisterHandlers(
 		appCtx,
 		lessonService,
-		studentService,
 		lessonManager,
+		studentService,
+		inviteStudentService,
+		homeworkService,
+		homeworkManager,
 		cfg,
 		cfg.AdminTelegramID,
 	)
