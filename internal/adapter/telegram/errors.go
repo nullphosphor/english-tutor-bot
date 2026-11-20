@@ -3,6 +3,6 @@ package telegram
 import "errors"
 
 var (
-	ErrInvalidScriptStep = errors.New("invalid script step")
+	ErrInvalidDialogStep = errors.New("invalid dialog step")
 	ErrDialogNotFound    = errors.New("dialog not found")
 )

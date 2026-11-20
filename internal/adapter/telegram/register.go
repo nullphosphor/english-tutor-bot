@@ -10,19 +10,30 @@ import (
 func (b *Bot) RegisterHandlers(
 	ctx context.Context,
 	lessonService *service.LessonService,
-	studentService *service.StudentService,
 	lessonManager *LessonCreationManager,
+	studentService *service.StudentService,
+	studentInviteService *service.StudentInviteService,
+	homeworkService *service.HomeworkService,
+	homeworkCreationManager *HomeworkCreationManager,
 	cfg config.Config,
 	adminTelegramID int64,
 ) {
+	b.StartHandler(
+		ctx,
+		studentService,
+		studentInviteService,
+		adminTelegramID,
+	)
+
 	b.CreateLessonHandler(
 		lessonManager,
 		adminTelegramID,
 	)
 
-	b.LessonCreationMessageHandler(
+	b.CreationMessageHandler(
 		ctx,
 		lessonManager,
+		homeworkCreationManager,
 		studentService,
 		cfg,
 		adminTelegramID,
@@ -32,6 +43,10 @@ func (b *Bot) RegisterHandlers(
 		ctx,
 		lessonManager,
 		lessonService,
+		studentService,
+		studentInviteService,
+		homeworkCreationManager,
+		homeworkService,
 		cfg,
 		adminTelegramID,
 	)
@@ -40,6 +55,17 @@ func (b *Bot) RegisterHandlers(
 		ctx,
 		lessonService,
 		cfg,
+		adminTelegramID,
+	)
+
+	b.CreateInviteHandler(
+		ctx,
+		studentInviteService,
+		adminTelegramID,
+	)
+
+	b.CreateHomeworkHandler(
+		homeworkCreationManager,
 		adminTelegramID,
 	)
 }

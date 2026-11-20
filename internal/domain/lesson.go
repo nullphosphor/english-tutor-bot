@@ -15,15 +15,15 @@ const (
 )
 
 type Lesson struct {
-	ID           int64
-	StudentID    int64
-	DateTime     time.Time
-	StartedAt    *time.Time
-	FinishedAt   *time.Time
-	MeetingApp   string
-	MeetingURL   string
-	LessonStatus LessonStatus
-	CreatedAt    time.Time
+	ID         int64
+	StudentID  int64
+	DateTime   time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+	Platform   string
+	URL        string
+	Status     LessonStatus
+	CreatedAt  time.Time
 
 	Version int64
 }
@@ -34,11 +34,11 @@ func NewLesson(
 	meetingApp, meetingURL string,
 ) Lesson {
 	return Lesson{
-		StudentID:    studentID,
-		DateTime:     dateTime,
-		MeetingApp:   meetingApp,
-		MeetingURL:   meetingURL,
-		LessonStatus: LessonStatusScheduled,
+		StudentID: studentID,
+		DateTime:  dateTime,
+		Platform:  meetingApp,
+		URL:       meetingURL,
+		Status:    LessonStatusScheduled,
 	}
 }
 
@@ -51,18 +51,18 @@ func (l *Lesson) Validate() error {
 		return ErrInvalidArgument
 	}
 
-	if l.MeetingApp != "Zoom" && l.MeetingApp != "Google Meet" {
+	if l.Platform != "Zoom" && l.Platform != "Google Meet" {
 		return ErrInvalidArgument
 	}
 
-	if strings.TrimSpace(l.MeetingURL) == "" {
+	if strings.TrimSpace(l.URL) == "" {
 		return ErrInvalidArgument
 	}
 
-	if l.LessonStatus != LessonStatusScheduled &&
-		l.LessonStatus != LessonStatusInProgress &&
-		l.LessonStatus != LessonStatusCompleted &&
-		l.LessonStatus != LessonStatusCancelled {
+	if l.Status != LessonStatusScheduled &&
+		l.Status != LessonStatusInProgress &&
+		l.Status != LessonStatusCompleted &&
+		l.Status != LessonStatusCancelled {
 		return ErrInvalidArgument
 	}
 
@@ -70,37 +70,37 @@ func (l *Lesson) Validate() error {
 }
 
 func (l *Lesson) StartLesson() error {
-	if l.LessonStatus != LessonStatusScheduled {
+	if l.Status != LessonStatusScheduled {
 		return ErrInvalidArgument
 	}
 
 	now := time.Now()
 	l.StartedAt = &now
-	l.LessonStatus = LessonStatusInProgress
+	l.Status = LessonStatusInProgress
 
 	return nil
 }
 
 func (l *Lesson) FinishLesson() error {
-	if l.LessonStatus != LessonStatusInProgress {
+	if l.Status != LessonStatusInProgress {
 		return ErrInvalidArgument
 	}
 
 	now := time.Now()
 	l.FinishedAt = &now
-	l.LessonStatus = LessonStatusCompleted
+	l.Status = LessonStatusCompleted
 
 	return nil
 }
 
 func (l *Lesson) CancelLesson() error {
-	switch l.LessonStatus {
+	switch l.Status {
 	case LessonStatusScheduled:
-		l.LessonStatus = LessonStatusCancelled
+		l.Status = LessonStatusCancelled
 	case LessonStatusInProgress:
 		now := time.Now()
 		l.FinishedAt = &now
-		l.LessonStatus = LessonStatusCancelled
+		l.Status = LessonStatusCancelled
 	case LessonStatusCancelled:
 		return ErrInvalidArgument
 	default:
