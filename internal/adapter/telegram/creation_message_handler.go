@@ -305,6 +305,10 @@ func handleHomeworkCreationMessage(
 	case HomeworkStepWaitingTitle:
 		text := c.Text()
 		text = strings.TrimSpace(text)
+		titleLen := len([]rune(text))
+		if titleLen < 3 || titleLen > 30 {
+			return c.Send("Please enter a title again.")
+		}
 
 		if err := homeworkCreationManager.UpdateTitle(
 			adminTelegramID,
@@ -319,6 +323,10 @@ func handleHomeworkCreationMessage(
 	case HomeworkStepWaitingDescription:
 		text := c.Text()
 		text = strings.TrimSpace(text)
+		descriptionLen := len([]rune(text))
+		if descriptionLen < 3 || descriptionLen > 3500 {
+			return c.Send("Please enter a description again")
+		}
 
 		if err := homeworkCreationManager.UpdateDescription(
 			adminTelegramID,

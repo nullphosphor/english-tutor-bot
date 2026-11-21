@@ -53,7 +53,7 @@ func (r *LessonRepository) CreateLesson(
 		&lessonDomain.URL,
 		&lessonDomain.Status,
 		&lessonDomain.CreatedAt,
-		&lesson.Version,
+		&lessonDomain.Version,
 	)
 
 	pgError := &pgconn.PgError{}

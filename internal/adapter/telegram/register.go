@@ -27,6 +27,7 @@ func (b *Bot) RegisterHandlers(
 
 	b.CreateLessonHandler(
 		lessonManager,
+		homeworkCreationManager,
 		adminTelegramID,
 	)
 
@@ -66,6 +67,7 @@ func (b *Bot) RegisterHandlers(
 
 	b.CreateHomeworkHandler(
 		homeworkCreationManager,
+		lessonManager,
 		adminTelegramID,
 	)
 }
