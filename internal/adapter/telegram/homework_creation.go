@@ -71,6 +71,10 @@ func (w *HomeworkCreationManager) UpdateStudentID(
 		return ErrDialogNotFound
 	}
 
+	if state.Step != HomeworkStepWaitingStudentID {
+		return ErrInvalidDialogStep
+	}
+
 	state.StudentID = studentID
 	state.Step = HomeworkStepWaitingTitle
 
@@ -88,6 +92,10 @@ func (w *HomeworkCreationManager) UpdateTitle(
 	state, ok := w.states[adminTelegramID]
 	if !ok {
 		return ErrDialogNotFound
+	}
+
+	if state.Step != HomeworkStepWaitingTitle {
+		return ErrInvalidDialogStep
 	}
 
 	state.Title = title
@@ -109,6 +117,10 @@ func (w *HomeworkCreationManager) UpdateDescription(
 		return ErrDialogNotFound
 	}
 
+	if state.Step != HomeworkStepWaitingDescription {
+		return ErrInvalidDialogStep
+	}
+
 	state.Description = description
 	state.Step = HomeworkStepWaitingDue
 
@@ -126,6 +138,10 @@ func (w *HomeworkCreationManager) UpdateDueAt(
 	state, ok := w.states[adminTelegramID]
 	if !ok {
 		return ErrDialogNotFound
+	}
+
+	if state.Step != HomeworkStepWaitingDue {
+		return ErrInvalidDialogStep
 	}
 
 	state.DueAt = dueAt
