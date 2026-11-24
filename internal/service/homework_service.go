@@ -25,10 +25,26 @@ type HomeworkRepository interface {
 		homework domain.Homework,
 	) (domain.Homework, error)
 
+	GetHomeworkByID(
+		ctx context.Context,
+		homeworkID int64,
+	) (domain.Homework, error)
+
 	GetHomeworksByStudentID(
 		ctx context.Context,
 		studentID int64,
 	) ([]domain.Homework, error)
+
+	UpdateHomework(
+		ctx context.Context,
+		homework domain.Homework,
+	) (domain.Homework, error)
+
+	DeleteHomework(
+		ctx context.Context,
+		homeworkID int64,
+		version int64,
+	) error
 }
 
 func (w *HomeworkService) CreateHomework(
@@ -45,6 +61,22 @@ func (w *HomeworkService) CreateHomework(
 	)
 	if err != nil {
 		return domain.Homework{}, fmt.Errorf("create homework: %w", err)
+	}
+
+	return homework, nil
+}
+
+func (w *HomeworkService) GetHomeworkByID(
+	ctx context.Context,
+	homeworkID int64,
+) (domain.Homework, error) {
+	if homeworkID <= 0 {
+		return domain.Homework{}, domain.ErrInvalidArgument
+	}
+
+	homework, err := w.homeworkRepository.GetHomeworkByID(ctx, homeworkID)
+	if err != nil {
+		return domain.Homework{}, fmt.Errorf("get homework from service: %w", err)
 	}
 
 	return homework, nil
@@ -67,4 +99,55 @@ func (w *HomeworkService) GetHomeworksByStudentID(
 	}
 
 	return homeworks, nil
+}
+
+func (w *HomeworkService) UpdateHomework(
+	ctx context.Context,
+	homework domain.Homework,
+) (domain.Homework, error) {
+	if homework.ID <= 0 {
+		return domain.Homework{}, domain.ErrInvalidArgument
+	}
+
+	if homework.Version <= 0 {
+		return domain.Homework{}, domain.ErrInvalidArgument
+	}
+
+	if err := homework.Validate(); err != nil {
+		return domain.Homework{}, fmt.Errorf("validate homework: %w", err)
+	}
+
+	homework, err := w.homeworkRepository.UpdateHomework(
+		ctx,
+		homework,
+	)
+	if err != nil {
+		return domain.Homework{}, fmt.Errorf("update homework from service: %w", err)
+	}
+
+	return homework, nil
+}
+
+func (w *HomeworkService) DeleteHomework(
+	ctx context.Context,
+	homeworkID int64,
+	version int64,
+) error {
+	if homeworkID <= 0 {
+		return domain.ErrInvalidArgument
+	}
+
+	if version <= 0 {
+		return domain.ErrInvalidArgument
+	}
+
+	if err := w.homeworkRepository.DeleteHomework(
+		ctx,
+		homeworkID,
+		version,
+	); err != nil {
+		return fmt.Errorf("delete homework from service: %w", err)
+	}
+
+	return nil
 }

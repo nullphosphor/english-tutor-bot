@@ -14,6 +14,7 @@ func buildStudentsMessage(
 	students []domain.Student,
 ) (string, *tele.ReplyMarkup) {
 	menu := &tele.ReplyMarkup{}
+	mainMenuBtn := menu.Data("Back to main menu", "main_menu")
 	result := make([]string, 0, len(students))
 	var studentRows []tele.Row
 	for _, student := range students {
@@ -23,11 +24,12 @@ func buildStudentsMessage(
 		row := menu.Row(
 			deactivateBtn,
 		)
+
 		msg := fmt.Sprintf(
 			"Student ID: %d\n"+
 				"Telegram ID: %d\n"+
 				"Student name: %s\n"+
-				"Active: %t",
+				"Active: %t\n\n",
 			student.ID,
 			student.TelegramID,
 			student.Name,
@@ -36,6 +38,7 @@ func buildStudentsMessage(
 		studentRows = append(studentRows, row)
 		result = append(result, msg)
 	}
+	studentRows = append(studentRows, menu.Row(mainMenuBtn))
 
 	response := []string{"Here are your active students\n"}
 	response = append(response, result...)
@@ -52,6 +55,7 @@ func buildStudentsActivateMessage(
 	students []domain.Student,
 ) (string, *tele.ReplyMarkup) {
 	menu := &tele.ReplyMarkup{}
+	mainMenuBtn := menu.Data("Back to main menu", "main_menu")
 	result := make([]string, 0, len(students))
 	var studentRows []tele.Row
 	for _, student := range students {
@@ -61,6 +65,7 @@ func buildStudentsActivateMessage(
 		row := menu.Row(
 			activateBtn,
 		)
+
 		msg := fmt.Sprintf(
 			"Student ID: %d\n"+
 				"Telegram ID: %d\n"+
@@ -74,6 +79,7 @@ func buildStudentsActivateMessage(
 		studentRows = append(studentRows, row)
 		result = append(result, msg)
 	}
+	studentRows = append(studentRows, menu.Row(mainMenuBtn))
 
 	response := []string{"Here are your inactive students\n"}
 	response = append(response, result...)
@@ -90,9 +96,15 @@ func buildStudentLessonsMessage(
 	count int64,
 	lessons []domain.Lesson,
 	cfg config.Config,
-) string {
+) (string, *tele.ReplyMarkup) {
 	var builder strings.Builder
+	menu := &tele.ReplyMarkup{}
 
+	mainMenuBtn := menu.Data("Back to main menu", "main_menu")
+
+	menu.Inline(
+		menu.Row(mainMenuBtn),
+	)
 	total := fmt.Sprintf("Total lessons: %d\n\n", count)
 	builder.WriteString("My lessons\n\n")
 	builder.WriteString(total)
@@ -116,5 +128,48 @@ func buildStudentLessonsMessage(
 		)
 	}
 
-	return builder.String()
+	return builder.String(), menu
+}
+
+func buildStudentsHomeworkMessage(
+	students []domain.Student,
+) (string, *tele.ReplyMarkup) {
+	menu := &tele.ReplyMarkup{}
+	mainMenuBtn := menu.Data("Back to main menu", "main_menu")
+
+	var studentRows []tele.Row
+	result := make([]string, 0, len(students))
+	for _, student := range students {
+		studentIDString := strconv.FormatInt(student.ID, 10)
+		studentNameBtn := menu.Data(student.Name, "student_homework", studentIDString)
+
+		row := menu.Row(studentNameBtn)
+
+		msg := fmt.Sprintf(
+			"Student ID: %d\n"+
+				"Student name: %s\n",
+			student.ID,
+			student.Name,
+		)
+		result = append(result, msg)
+		studentRows = append(studentRows, row)
+	}
+
+	if len(students) == 0 {
+		menu.Inline(
+			menu.Row(mainMenuBtn),
+		)
+		return "You don't have any students yet.", menu
+	}
+	studentRows = append(studentRows, menu.Row(mainMenuBtn))
+
+	response := []string{"Here are your students\n"}
+	response = append(response, result...)
+	message := strings.Join(response, "\n")
+
+	menu.Inline(
+		studentRows...,
+	)
+
+	return message, menu
 }

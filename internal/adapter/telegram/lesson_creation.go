@@ -222,7 +222,7 @@ func (l *LessonCreationManager) CancelDialog(
 		return ErrDialogNotFound
 	}
 
-	if state.Step != LessonStepWaitingConfirm {
+	if state.Step == LessonStepCreating {
 		return ErrInvalidDialogStep
 	}
 

@@ -13,6 +13,7 @@ func (b *Bot) RegisterHandlers(
 	lessonManager *LessonCreationManager,
 	studentService *service.StudentService,
 	studentInviteService *service.StudentInviteService,
+	inviteManager *StudentInviteCreationManager,
 	homeworkService *service.HomeworkService,
 	homeworkCreationManager *HomeworkCreationManager,
 	cfg config.Config,
@@ -28,6 +29,7 @@ func (b *Bot) RegisterHandlers(
 	b.CreateLessonHandler(
 		lessonManager,
 		homeworkCreationManager,
+		inviteManager,
 		adminTelegramID,
 	)
 
@@ -35,7 +37,9 @@ func (b *Bot) RegisterHandlers(
 		ctx,
 		lessonManager,
 		homeworkCreationManager,
+		inviteManager,
 		studentService,
+		studentInviteService,
 		cfg,
 		adminTelegramID,
 	)
@@ -46,6 +50,7 @@ func (b *Bot) RegisterHandlers(
 		lessonService,
 		studentService,
 		studentInviteService,
+		inviteManager,
 		homeworkCreationManager,
 		homeworkService,
 		cfg,
@@ -68,6 +73,7 @@ func (b *Bot) RegisterHandlers(
 	b.CreateHomeworkHandler(
 		homeworkCreationManager,
 		lessonManager,
+		inviteManager,
 		adminTelegramID,
 	)
 }

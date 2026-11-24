@@ -19,16 +19,19 @@ func (b *Bot) StartHandler(
 ) {
 	b.Handle("/start", func(c tele.Context) error {
 		id := c.Sender().ID
+		firstName := c.Sender().FirstName
+		if firstName == "" {
+			firstName = "admin"
+		}
 
-		menu := &tele.ReplyMarkup{}
+		welcomeMsg := fmt.Sprintf(
+			"Welcome, %s! Choose an action.",
+			firstName,
+		)
 
 		if id == adminTelegramID {
-			studentsBtn := menu.Data("Students", "students_list")
-			inactiveStudentsBtn := menu.Data("Inactive students", "inactive_students_list")
-			menu.Inline(
-				menu.Row(studentsBtn, inactiveStudentsBtn),
-			)
-			return c.Send("Welcome, admin! You can manage lessons and students using the available commands.", menu)
+			menu := buildAdminMainMenu()
+			return c.Send(welcomeMsg, menu)
 		}
 
 		student, err := studentService.GetStudentByTelegramID(ctx, id)
@@ -78,15 +81,39 @@ func (b *Bot) StartHandler(
 			return c.Send("Your account is inactive. Please contact the admin for assistance.")
 		}
 
-		studentLessonsMenu := &tele.ReplyMarkup{}
+		menu := &tele.ReplyMarkup{}
 
-		studentLessonBtn := studentLessonsMenu.Data("My lessons", "my_lesson")
-
-		studentLessonsMenu.Inline(
-			studentLessonsMenu.Row(studentLessonBtn),
+		lessonBtn := menu.Data("My lessons", "my_lesson")
+		homeworkBtn := menu.Data("My homework", "my_homework")
+		menu.Inline(
+			menu.Row(lessonBtn, homeworkBtn),
 		)
 
-		return c.Send("Welcome! You are registered as a student. You can view your upcoming lessons and manage your account using the available commands.", studentLessonsMenu)
+		message := fmt.Sprintf(
+			"Hello, %s. Choose an action",
+			student.Name,
+		)
 
+		return c.Send(message, menu)
 	})
+}
+
+func buildAdminMainMenu() *tele.ReplyMarkup {
+	menu := &tele.ReplyMarkup{}
+
+	createLessonBtn := menu.Data("Create lesson", "create_lesson")
+	createHomeworkBtn := menu.Data("Create homework", "create_homework")
+	studentsBtn := menu.Data("Students", "students_list")
+	inactiveStudentsBtn := menu.Data("Inactive students", "inactive_students_list")
+	addStudentBtn := menu.Data("Add student", "add_student")
+	todayLessonsBtn := menu.Data("Today's lessons", "today_lessons")
+	manageHomeworkBtn := menu.Data("Manage homework", "manage_homework")
+	menu.Inline(
+		menu.Row(createLessonBtn, createHomeworkBtn),
+		menu.Row(studentsBtn, inactiveStudentsBtn),
+		menu.Row(addStudentBtn, todayLessonsBtn),
+		menu.Row(manageHomeworkBtn),
+	)
+
+	return menu
 }

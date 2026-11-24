@@ -10,10 +10,18 @@ import (
 func (b *Bot) CreateHomeworkHandler(
 	homeworkCreationManager *HomeworkCreationManager,
 	lessonCreationManager *LessonCreationManager,
+	inviteManager *StudentInviteCreationManager,
 	adminTelegramID int64,
 ) {
 	b.Handle("/create_homework", func(c tele.Context) error {
 		id := c.Sender().ID
+
+		menu := &tele.ReplyMarkup{}
+		cancelBtn := menu.Data("Cancel", "homework_cancel")
+
+		menu.Inline(
+			menu.Row(cancelBtn),
+		)
 
 		if id != adminTelegramID {
 			return c.Send("You aren't authorized to use this command.")
@@ -28,7 +36,12 @@ func (b *Bot) CreateHomeworkHandler(
 		if err == nil {
 			return c.Send("You must first complete or cancel the creation of your lesson.")
 		}
+
+		if ok := inviteManager.IsActive(id); ok {
+			return c.Send("You must first complete or cancel the student invitation creation.")
+		}
+
 		homeworkCreationManager.Start(id)
-		return c.Send("Please enter the student's Telegram ID.")
+		return c.Send("Please enter the student's Telegram ID.", menu)
 	})
 }

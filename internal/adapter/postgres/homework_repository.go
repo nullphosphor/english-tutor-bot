@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/nullphosphor/english-tutor-bot/internal/domain"
 )
 
@@ -25,7 +27,7 @@ func (r *HomeworkRepository) CreateHomework(
 	INSERT INTO public.homeworks (student_id, title,
 	description, due_at)
 	VALUES ($1, $2, $3, $4)
-	RETURNING id, student_id, title, description, due_at, created_at;
+	RETURNING id, student_id, version, title, description, due_at, created_at;
 	`
 
 	row := r.pool.QueryRow(
@@ -41,6 +43,7 @@ func (r *HomeworkRepository) CreateHomework(
 	err := row.Scan(
 		&homeworkDomain.ID,
 		&homeworkDomain.StudentID,
+		&homeworkDomain.Version,
 		&homeworkDomain.Title,
 		&homeworkDomain.Description,
 		&homeworkDomain.DueAt,
@@ -53,12 +56,51 @@ func (r *HomeworkRepository) CreateHomework(
 	return homeworkDomain, nil
 }
 
+func (r *HomeworkRepository) GetHomeworkByID(
+	ctx context.Context,
+	homeworkID int64,
+) (domain.Homework, error) {
+	query := `
+	SELECT id, student_id, version, title, description, due_at, created_at
+	FROM public.homeworks
+	WHERE id=$1;
+	`
+
+	row := r.pool.QueryRow(
+		ctx,
+		query,
+		homeworkID,
+	)
+
+	var homeworkDomain domain.Homework
+	err := row.Scan(
+		&homeworkDomain.ID,
+		&homeworkDomain.StudentID,
+		&homeworkDomain.Version,
+		&homeworkDomain.Title,
+		&homeworkDomain.Description,
+		&homeworkDomain.DueAt,
+		&homeworkDomain.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Homework{}, fmt.Errorf(
+				"homework with id='%d': %w",
+				homeworkID, domain.ErrNotFound,
+			)
+		}
+		return domain.Homework{}, fmt.Errorf("can't get homework: %w", err)
+	}
+
+	return homeworkDomain, nil
+}
+
 func (r *HomeworkRepository) GetHomeworksByStudentID(
 	ctx context.Context,
 	studentID int64,
 ) ([]domain.Homework, error) {
 	query := `
-	SELECT id, student_id, title, description, due_at, created_at
+	SELECT id, student_id, version, title, description, due_at, created_at
 	FROM public.homeworks
 	WHERE student_id=$1
 	ORDER BY created_at DESC;
@@ -80,6 +122,7 @@ func (r *HomeworkRepository) GetHomeworksByStudentID(
 		err := rows.Scan(
 			&homeworkDomain.ID,
 			&homeworkDomain.StudentID,
+			&homeworkDomain.Version,
 			&homeworkDomain.Title,
 			&homeworkDomain.Description,
 			&homeworkDomain.DueAt,
@@ -95,4 +138,78 @@ func (r *HomeworkRepository) GetHomeworksByStudentID(
 	}
 
 	return homeworksDomain, nil
+}
+
+func (r *HomeworkRepository) UpdateHomework(
+	ctx context.Context,
+	homework domain.Homework,
+) (domain.Homework, error) {
+	query := `
+	UPDATE public.homeworks
+	SET title=$1, description=$2, due_at=$3, version=version+1
+	WHERE id=$4 AND version=$5
+	RETURNING id, student_id, version, title, description, due_at, created_at;
+	`
+
+	row := r.pool.QueryRow(
+		ctx,
+		query,
+		homework.Title,
+		homework.Description,
+		homework.DueAt,
+		homework.ID,
+		homework.Version,
+	)
+
+	var homeworkDomain domain.Homework
+	err := row.Scan(
+		&homeworkDomain.ID,
+		&homeworkDomain.StudentID,
+		&homeworkDomain.Version,
+		&homeworkDomain.Title,
+		&homeworkDomain.Description,
+		&homeworkDomain.DueAt,
+		&homeworkDomain.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Homework{}, fmt.Errorf(
+				"homework with id='%d': %w",
+				homework.ID, domain.ErrConflict,
+			)
+		}
+		return domain.Homework{}, fmt.Errorf("can't update homework: %w", err)
+	}
+
+	return homeworkDomain, nil
+}
+
+func (r *HomeworkRepository) DeleteHomework(
+	ctx context.Context,
+	homeworkID int64,
+	version int64,
+) error {
+	query := `
+	DELETE FROM public.homeworks
+	WHERE id=$1 AND version=$2;
+	`
+
+	cmdTag, err := r.pool.Exec(
+		ctx,
+		query,
+		homeworkID,
+		version,
+	)
+	if err != nil {
+		return fmt.Errorf("exec query: %w", err)
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return fmt.Errorf(
+			"homework with id='%d': %w",
+			homeworkID, domain.ErrConflict,
+		)
+	}
+
+	return nil
 }
