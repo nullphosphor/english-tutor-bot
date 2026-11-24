@@ -185,20 +185,56 @@ func (w *HomeworkCreationManager) BeginCreation(
 		return HomeworkCreationState{}, ErrDialogNotFound
 	}
 
-	if state.IsEditing {
-		if state.Step != HomeworkStepEditingConfirm {
-			return HomeworkCreationState{}, ErrInvalidDialogStep
-		}
-	} else {
-		if state.Step != HomeworkStepWaitingConfirm {
-			return HomeworkCreationState{}, ErrInvalidDialogStep
-		}
+	if state.IsEditing || state.Step != HomeworkStepWaitingConfirm {
+		return HomeworkCreationState{}, ErrInvalidDialogStep
 	}
 
 	state.Step = HomeworkStepCreating
 	w.states[adminTelegramID] = state
 
 	return state, nil
+}
+
+func (w *HomeworkCreationManager) BeginUpdate(
+	adminTelegramID int64,
+) (HomeworkCreationState, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	state, ok := w.states[adminTelegramID]
+	if !ok {
+		return HomeworkCreationState{}, ErrDialogNotFound
+	}
+
+	if !state.IsEditing || state.Step != HomeworkStepEditingConfirm {
+		return HomeworkCreationState{}, ErrInvalidDialogStep
+	}
+
+	state.Step = HomeworkStepCreating
+	w.states[adminTelegramID] = state
+
+	return state, nil
+}
+
+func (w *HomeworkCreationManager) ReturnToEditConfirmation(
+	adminTelegramID int64,
+) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	state, ok := w.states[adminTelegramID]
+	if !ok {
+		return ErrDialogNotFound
+	}
+
+	if !state.IsEditing || state.Step != HomeworkStepCreating {
+		return ErrInvalidDialogStep
+	}
+
+	state.Step = HomeworkStepEditingConfirm
+	w.states[adminTelegramID] = state
+
+	return nil
 }
 
 func (w *HomeworkCreationManager) ReturnToConfirmation(
@@ -238,7 +274,6 @@ func (w *HomeworkCreationManager) CancelDialog(
 	}
 
 	delete(w.states, adminTelegramID)
-
 	return nil
 }
 
