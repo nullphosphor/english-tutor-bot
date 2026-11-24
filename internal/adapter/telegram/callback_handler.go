@@ -291,7 +291,7 @@ func (b *Bot) CallbackHandler(
 
 				return c.Edit(msg, menu)
 			case "homework_update_confirm":
-				state, err := homeworkCreationManager.BeginCreation(adminTelegramID)
+				state, err := homeworkCreationManager.BeginUpdate(adminTelegramID)
 				if err != nil {
 					if errors.Is(err, ErrDialogNotFound) {
 						return c.Send("Please start by running /create_homework.")
@@ -299,7 +299,7 @@ func (b *Bot) CallbackHandler(
 					if errors.Is(err, ErrInvalidDialogStep) {
 						return c.Send("This homework is no longer awaiting confirmation.")
 					}
-					return fmt.Errorf("begin homework creation: %w", err)
+					return fmt.Errorf("begin homework update: %w", err)
 				}
 
 				homeworkDomain := domain.NewHomework(
@@ -312,9 +312,14 @@ func (b *Bot) CallbackHandler(
 				homeworkDomain.ID = state.HomeworkID
 				homeworkDomain.Version = state.Version
 
-				if _, err := homeworkService.UpdateHomework(ctx, homeworkDomain); err != nil {
-					homeworkCreationManager.FinishCreation(adminTelegramID)
-					if errors.Is(err, domain.ErrConflict) {
+				if _, errUpdateHomework := homeworkService.UpdateHomework(
+					ctx,
+					homeworkDomain,
+				); errUpdateHomework != nil {
+
+					if errors.Is(errUpdateHomework, domain.ErrConflict) {
+						homeworkCreationManager.FinishCreation(adminTelegramID)
+
 						homeworks, errGetHomework := homeworkService.GetHomeworksByStudentID(
 							ctx,
 							state.StudentID,
@@ -329,10 +334,21 @@ func (b *Bot) CallbackHandler(
 
 						return c.Edit(message, menu)
 					}
-					return fmt.Errorf("update homework: %w", err)
+
+					if errReturn := homeworkCreationManager.ReturnToEditConfirmation(
+						adminTelegramID,
+					); errReturn != nil {
+						return fmt.Errorf(
+							"update homework: %w",
+							errors.Join(errUpdateHomework, errReturn),
+						)
+					}
+
+					return fmt.Errorf("update homework: %w", errUpdateHomework)
 				}
 
 				homeworkCreationManager.FinishCreation(adminTelegramID)
+
 				homeworks, errGetHomework := homeworkService.GetHomeworksByStudentID(
 					ctx,
 					state.StudentID,

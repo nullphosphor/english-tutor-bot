@@ -39,6 +39,17 @@ func (b *Bot) CreateLessonHandler(
 			return c.Send("You must first complete or cancel the student invitation creation.")
 		}
 
+		_, err = lessonCreationManager.GetState(id)
+		if err != nil {
+			if !errors.Is(err, ErrDialogNotFound) {
+				return fmt.Errorf("get lesson state: %w", err)
+			}
+		}
+
+		if err == nil {
+			return c.Send("You must first complete or cancel the creation of your lesson.")
+		}
+
 		lessonCreationManager.Start(adminTelegramID)
 		return c.Send("Please enter the student's Telegram ID.", menu)
 	})
