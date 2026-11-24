@@ -51,7 +51,9 @@ func (l *Lesson) Validate() error {
 		return ErrInvalidArgument
 	}
 
-	if l.Platform != "Zoom" && l.Platform != "Google Meet" {
+	if l.Platform != "Zoom" &&
+		l.Platform != "Google Meet" &&
+		l.Platform != "Yandex Telemost" {
 		return ErrInvalidArgument
 	}
 

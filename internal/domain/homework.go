@@ -12,6 +12,8 @@ type Homework struct {
 	Description string
 	DueAt       *time.Time
 	CreatedAt   time.Time
+
+	Version int64
 }
 
 func NewHomework(

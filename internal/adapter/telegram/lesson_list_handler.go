@@ -40,11 +40,8 @@ func (b *Bot) TodayLessonsHandler(
 			return fmt.Errorf("get lessons: %w", err)
 		}
 
-		if len(lessons) == 0 {
-			return c.Send("Enjoy your day off! :) You don't have any lessons today")
-		}
-
 		msg, menu := buildLessonsMessage(lessons, cfg)
+
 		return c.Send(msg, menu)
 	})
 }
@@ -54,6 +51,8 @@ func buildLessonsMessage(
 	cfg config.Config,
 ) (string, *tele.ReplyMarkup) {
 	menu := &tele.ReplyMarkup{}
+
+	mainMenuBtn := menu.Data("Back to main menu", "main_menu")
 	result := make([]string, 0, len(lessons))
 	lessonRows := make([]tele.Row, 0, len(lessons))
 	for _, lesson := range lessons {
@@ -117,6 +116,7 @@ func buildLessonsMessage(
 		)
 		result = append(result, msg)
 	}
+	lessonRows = append(lessonRows, menu.Row(mainMenuBtn))
 
 	response := []string{"There are your lessons today:\n"}
 	response = append(response, result...)
@@ -125,6 +125,10 @@ func buildLessonsMessage(
 	menu.Inline(
 		lessonRows...,
 	)
+
+	if len(lessons) == 0 {
+		return "Enjoy your day off! :) You don't have any lessons today", menu
+	}
 
 	return message, menu
 }

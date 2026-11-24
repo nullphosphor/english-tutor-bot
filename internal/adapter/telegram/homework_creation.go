@@ -3,6 +3,8 @@ package telegram
 import (
 	"sync"
 	"time"
+
+	"github.com/nullphosphor/english-tutor-bot/internal/domain"
 )
 
 type HomeworkCreationStep string
@@ -14,6 +16,8 @@ const (
 	HomeworkStepWaitingDue         HomeworkCreationStep = "waiting_due"
 	HomeworkStepWaitingConfirm     HomeworkCreationStep = "waiting_confirm"
 	HomeworkStepCreating           HomeworkCreationStep = "creating"
+	HomeworkStepEditingMenu        HomeworkCreationStep = "editing_menu"
+	HomeworkStepEditingConfirm     HomeworkCreationStep = "editing_confirm"
 )
 
 type HomeworkCreationState struct {
@@ -22,6 +26,10 @@ type HomeworkCreationState struct {
 	Title       string
 	Description string
 	DueAt       *time.Time
+
+	HomeworkID int64
+	Version    int64
+	IsEditing  bool
 }
 
 type HomeworkCreationManager struct {
@@ -98,8 +106,13 @@ func (w *HomeworkCreationManager) UpdateTitle(
 		return ErrInvalidDialogStep
 	}
 
+	if state.IsEditing {
+		state.Step = HomeworkStepEditingMenu
+	} else {
+		state.Step = HomeworkStepWaitingDescription
+	}
+
 	state.Title = title
-	state.Step = HomeworkStepWaitingDescription
 
 	w.states[adminTelegramID] = state
 	return nil
@@ -121,8 +134,13 @@ func (w *HomeworkCreationManager) UpdateDescription(
 		return ErrInvalidDialogStep
 	}
 
+	if state.IsEditing {
+		state.Step = HomeworkStepEditingMenu
+	} else {
+		state.Step = HomeworkStepWaitingDue
+	}
+
 	state.Description = description
-	state.Step = HomeworkStepWaitingDue
 
 	w.states[adminTelegramID] = state
 	return nil
@@ -144,8 +162,13 @@ func (w *HomeworkCreationManager) UpdateDueAt(
 		return ErrInvalidDialogStep
 	}
 
+	if state.IsEditing {
+		state.Step = HomeworkStepEditingMenu
+	} else {
+		state.Step = HomeworkStepWaitingConfirm
+	}
+
 	state.DueAt = dueAt
-	state.Step = HomeworkStepWaitingConfirm
 
 	w.states[adminTelegramID] = state
 	return nil
@@ -162,8 +185,14 @@ func (w *HomeworkCreationManager) BeginCreation(
 		return HomeworkCreationState{}, ErrDialogNotFound
 	}
 
-	if state.Step != HomeworkStepWaitingConfirm {
-		return HomeworkCreationState{}, ErrInvalidDialogStep
+	if state.IsEditing {
+		if state.Step != HomeworkStepEditingConfirm {
+			return HomeworkCreationState{}, ErrInvalidDialogStep
+		}
+	} else {
+		if state.Step != HomeworkStepWaitingConfirm {
+			return HomeworkCreationState{}, ErrInvalidDialogStep
+		}
 	}
 
 	state.Step = HomeworkStepCreating
@@ -204,7 +233,7 @@ func (w *HomeworkCreationManager) CancelDialog(
 		return ErrDialogNotFound
 	}
 
-	if state.Step != HomeworkStepWaitingConfirm {
+	if state.Step == HomeworkStepCreating {
 		return ErrInvalidDialogStep
 	}
 
@@ -220,4 +249,80 @@ func (w *HomeworkCreationManager) FinishCreation(
 	defer w.mu.Unlock()
 
 	delete(w.states, adminTelegramID)
+}
+
+func (w *HomeworkCreationManager) StartEdit(
+	adminTelegramID int64,
+	homework domain.Homework,
+) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.states[adminTelegramID] = HomeworkCreationState{
+		HomeworkID:  homework.ID,
+		StudentID:   homework.StudentID,
+		Version:     homework.Version,
+		Title:       homework.Title,
+		Description: homework.Description,
+		DueAt:       homework.DueAt,
+		IsEditing:   true,
+		Step:        HomeworkStepEditingMenu,
+	}
+}
+
+func (w *HomeworkCreationManager) StartEditingField(
+	adminTelegramID int64,
+	targetStep HomeworkCreationStep,
+) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	state, ok := w.states[adminTelegramID]
+	if !ok {
+		return ErrDialogNotFound
+	}
+
+	if !state.IsEditing {
+		return ErrNotEditing
+	}
+
+	if state.Step != HomeworkStepEditingMenu {
+		return ErrInvalidDialogStep
+	}
+
+	switch targetStep {
+	case HomeworkStepWaitingTitle, HomeworkStepWaitingDescription, HomeworkStepWaitingDue:
+		state.Step = targetStep
+	default:
+		return ErrInvalidDialogStep
+	}
+
+	w.states[adminTelegramID] = state
+
+	return nil
+}
+
+func (w *HomeworkCreationManager) BeginEditConfirmation(
+	adminTelegramID int64,
+) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	state, ok := w.states[adminTelegramID]
+	if !ok {
+		return ErrDialogNotFound
+	}
+
+	if !state.IsEditing {
+		return ErrNotEditing
+	}
+
+	if state.Step != HomeworkStepEditingMenu {
+		return ErrInvalidDialogStep
+	}
+
+	state.Step = HomeworkStepEditingConfirm
+	w.states[adminTelegramID] = state
+
+	return nil
 }

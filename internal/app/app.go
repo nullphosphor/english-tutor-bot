@@ -49,6 +49,7 @@ func Run() error {
 	log.Println("initializing feature invites")
 	invitesRepository := postgres.NewStudentInviteRepository(pool)
 	inviteStudentService := service.NewStudentInviteService(invitesRepository)
+	inviteManager := telegram.NewStudentInviteCreationManager()
 
 	log.Println("initializing feature homework")
 	homeworkRepository := postgres.NewHomeworkRepository(pool)
@@ -60,12 +61,14 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to create bot: %w", err)
 	}
+
 	bot.RegisterHandlers(
 		appCtx,
 		lessonService,
 		lessonManager,
 		studentService,
 		inviteStudentService,
+		inviteManager,
 		homeworkService,
 		homeworkManager,
 		cfg,
